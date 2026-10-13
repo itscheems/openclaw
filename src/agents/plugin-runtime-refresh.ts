@@ -13,6 +13,11 @@ const refreshScope = resolveGlobalSingleton(
   () => new AsyncLocalStorage<Refresh>(),
 );
 
+/** Scheduler-owned work has its own lifetime beyond the turn that enqueued it. */
+export function runOutsideAgentPluginRuntimeRefresh<T>(run: () => T): T {
+  return refreshScope.exit(run);
+}
+
 /** Captured host control survives plugin callbacks without becoming run authority. */
 export function captureAgentPluginRuntimeRefresh() {
   const owner = refreshScope.getStore();

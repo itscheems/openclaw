@@ -6,6 +6,7 @@
  * no context and fail mid-run. RPC admission keeps its caller scope; accepted
  * scheduler-owned execution replaces that scope for work that can outlive the request.
  */
+import { runOutsideAgentPluginRuntimeRefresh } from "../agents/plugin-runtime-refresh.js";
 import { withoutGatewayToolCallerIdentity } from "../agents/tools/gateway-caller-context.js";
 import { captureSqliteReadOnlyWorkerScope } from "../infra/sqlite-readonly-worker-context.js";
 import type { PluginRegistry } from "../plugins/registry-types.js";
@@ -57,22 +58,24 @@ export function createScheduledGatewayRunner(
   const spawnBroker = getSpawnBroker();
   const runWithReadOnlyWorkers = captureSqliteReadOnlyWorkerScope();
   return async <T>(run: () => Promise<T>): Promise<T> =>
-    await withoutGatewayToolCallerIdentity(() =>
-      runWithSpawnBroker(spawnBroker, async () => {
-        const runWithRegistry = () =>
-          withPluginRuntimeRegistryScope(resolvePluginRegistry?.(), () =>
-            runWithReadOnlyWorkers(run),
+    await runOutsideAgentPluginRuntimeRefresh(() =>
+      withoutGatewayToolCallerIdentity(() =>
+        runWithSpawnBroker(spawnBroker, async () => {
+          const runWithRegistry = () =>
+            withPluginRuntimeRegistryScope(resolvePluginRegistry?.(), () =>
+              runWithReadOnlyWorkers(run),
+            );
+          if (!resolveGatewayContext) {
+            return await runWithRegistry();
+          }
+          return await withPluginRuntimeGatewayContextResolver(
+            resolveGatewayContext,
+            runWithRegistry,
+            {
+              inheritRequestScope: false,
+            },
           );
-        if (!resolveGatewayContext) {
-          return await runWithRegistry();
-        }
-        return await withPluginRuntimeGatewayContextResolver(
-          resolveGatewayContext,
-          runWithRegistry,
-          {
-            inheritRequestScope: false,
-          },
-        );
-      }),
+        }),
+      ),
     );
 }
